@@ -32,7 +32,7 @@ class TradingBot:
                 "por entrada)."
             )
 
-        min_history = max(self.cfg.ema_slow_period, self.cfg.bb_period, self.cfg.macd_slow) + 5
+        min_history = max(self.cfg.bb_period, self.cfg.rsi_period, 20) + 5
 
         async with PocketOptionAsync(self.cfg.ssid) as client:
             actual_demo = client.is_demo()

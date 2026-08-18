@@ -25,6 +25,26 @@ risco configuráveis.
   em conta demo antes** (basta usar um SSID de sessão demo e deixar
   `LIVE_TRADING_CONFIRMED=false`).
 
+## O algoritmo (pesquisa)
+
+Antes de definir a estratégia, pesquisei o que bots de Pocket Option
+costumam usar na prática. O achado mais concreto foi um bot open-source
+amplamente referenciado, o
+[`pocket_option_trading_bot`](https://github.com/VitalySvyatyuk/pocket_option_trading_bot),
+cuja estratégia principal de indicador é o **Parabolic SAR (PSAR)**: ele
+opera CALL/PUT na direção da tendência indicada pelo PSAR. Buscas gerais
+sobre bots/sinais de Pocket Option confirmam o mesmo padrão do mercado:
+RSI, MACD, Bandas de Bollinger e Stochastic como indicadores mais citados,
+PSAR e cruzamento de médias para a direção da tendência, e martingale
+(dobrar a aposta após perda) como técnica de gestão de banca comum — porém
+constantemente descrita como alto risco e desaconselhada, inclusive pelo
+próprio blog da Pocket Option.
+
+Por isso a estratégia aqui reproduz o algoritmo do bot de referência
+(PSAR) em vez de reinventar um, mas **sem martingale** — o gerenciamento
+de risco usa stake fixo com limites diários (ver `risk.py`), que é a
+prática recomendada pelas próprias fontes pesquisadas.
+
 ## Como funciona
 
 1. **Conexão** (`pocket_bot/bot.py`): abre uma sessão autenticada via SSID
@@ -34,18 +54,19 @@ risco configuráveis.
    em formação, sem gaps) e mantém um `DataFrame` atualizado em memória.
 3. **Estratégia / EA** (`pocket_bot/strategy.py` + `indicators.py`):
    a cada ciclo (`DECISION_INTERVAL_SECONDS`), calcula para cada par:
-   - **EMA 9 / EMA 21** — direção da tendência (cruzamento de médias)
-   - **MACD (12, 26, 9)** — confirmação de momentum (histograma)
-   - **RSI (14)** — bloqueia entradas quando a tendência já parece exaurida
-     (sobrecompra para CALL, sobrevenda para PUT), mas não exige "RSI
-     neutro" (numa tendência saudável o RSI fica deslocado a favor dela)
+   - **Parabolic SAR** — sinal principal: entra CALL/PUT logo após o PSAR
+     reverter (preço cruza para o outro lado do SAR), a mesma lógica do
+     bot de referência pesquisado
+   - **RSI (14)** — bloqueia a entrada quando a tendência que acabou de
+     reverter já parece esgotada no mesmo sentido (sobrecompra para CALL,
+     sobrevenda para PUT)
    - **Bandas de Bollinger (20, 2)** — filtro de volatilidade mínima, para
      não operar em mercado "parado"
 
-   Cada par que gera sinal recebe um **score de 0 a 1**. O bot escolhe o
-   par com maior score entre todos os monitorados e só opera se o score
-   ultrapassar `MIN_SIGNAL_SCORE`. É assim que o bot "escolhe os pares"
-   automaticamente.
+   Cada par que gera sinal recebe um **score de 0 a 1** (baseado na
+   distância entre preço e SAR). O bot escolhe o par com maior score entre
+   todos os monitorados e só opera se o score ultrapassar
+   `MIN_SIGNAL_SCORE`. É assim que o bot "escolhe os pares" automaticamente.
 4. **Expirações por ativo**: a Pocket Option só aceita durações fixas por
    ativo (ex.: 5s/15s/30s/60s/180s/300s — o que você vê na plataforma como
    "M1", "M3", "M5"...). Ao conectar, o bot consulta `active_assets()` e
@@ -85,7 +106,7 @@ Edite o `.env`:
 2. Ajuste `PO_PAIRS`, `STAKE_AMOUNT`, `EXPIRY_SECONDS` e os limites de
    risco (`MAX_DAILY_LOSS`, `MAX_TRADES_PER_DAY`, etc.) conforme seu
    perfil.
-3. Todos os parâmetros da estratégia (EMA, RSI, MACD, Bollinger,
+3. Todos os parâmetros da estratégia (PSAR, RSI, Bollinger,
    `MIN_SIGNAL_SCORE`) são ajustáveis no `.env` — os valores padrão são um
    ponto de partida razoável, não uma calibração testada em dados reais da
    Pocket Option. Rode em demo, observe os logs (nível `DEBUG` mostra os
@@ -107,7 +128,7 @@ resultados ficam registrados em `trade_journal.csv`.
 main.py                    ponto de entrada
 pocket_bot/
   config.py                carrega e valida o .env
-  indicators.py             EMA, RSI, MACD, Bandas de Bollinger
+  indicators.py             Parabolic SAR, RSI, Bandas de Bollinger
   strategy.py               a lógica de decisão (o "EA")
   market_data.py            feed de candles em tempo real por par
   risk.py                   limites de risco

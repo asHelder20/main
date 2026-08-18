@@ -1,15 +1,19 @@
 """
-A "EA" do bot: combina cruzamento de médias móveis (EMA), momentum (MACD)
-e um filtro de volatilidade (Bandas de Bollinger) para gerar sinais de
-entrada CALL/PUT, com uma pontuação de confiança (score) usada para
-escolher, entre os vários pares monitorados, qual operar em cada ciclo.
+A "EA" do bot: reproduz o algoritmo mais comum entre os bots de Pocket
+Option pesquisados (ex.: o bot open-source pocket_option_trading_bot, que
+usa Parabolic SAR como estratégia principal, e as recomendações recorrentes
+de RSI + Bandas de Bollinger como filtro) — entra na direção de uma
+reversão recém-detectada do PSAR, descartando o sinal se o RSI já estiver
+esgotado no mesmo sentido ou se a volatilidade estiver baixa demais. O
+score de confiança é usado para escolher, entre os pares monitorados, qual
+operar em cada ciclo.
 """
 from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
 
-from .indicators import bollinger_bands, ema, macd, rsi
+from .indicators import bollinger_bands, psar, rsi
 
 
 @dataclass
@@ -21,43 +25,42 @@ class Signal:
 
 
 def evaluate(df: pd.DataFrame, cfg) -> Optional[Signal]:
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
     close = df["close"].astype(float)
 
-    ema_fast = ema(close, cfg.ema_fast_period)
-    ema_slow = ema(close, cfg.ema_slow_period)
+    if len(close) < 3:
+        return None
+
+    sar = psar(high, low, cfg.psar_af_step, cfg.psar_af_max)
     rsi_series = rsi(close, cfg.rsi_period)
-    _, _, hist = macd(close, cfg.macd_fast, cfg.macd_slow, cfg.macd_signal)
     _, _, _, width = bollinger_bands(close, cfg.bb_period, cfg.bb_std_mult)
 
-    last_close = close.iloc[-1]
-    last_ema_fast = ema_fast.iloc[-1]
-    last_ema_slow = ema_slow.iloc[-1]
-    last_rsi = rsi_series.iloc[-1]
-    last_hist = hist.iloc[-1]
-    last_width = width.iloc[-1]
+    trend = (close.reset_index(drop=True) > sar).reset_index(drop=True)
+    last_trend = trend.iloc[-1]
+    prev_trend = trend.iloc[-2]
+    if last_trend == prev_trend:
+        return None  # só entra logo após a reversão do PSAR, como o bot de referência
 
-    if pd.isna(last_width) or last_close == 0:
+    last_close = close.iloc[-1]
+    last_sar = sar.iloc[-1]
+    last_width = width.iloc[-1]
+    last_rsi = rsi_series.iloc[-1]
+
+    if pd.isna(last_width) or pd.isna(last_rsi) or last_close == 0:
         return None
     if last_width < cfg.min_bb_width:
         return None  # volatilidade insuficiente: mercado "parado", evita operar
-    if pd.isna(last_rsi):
-        return None
 
-    trend_strength = abs(last_ema_fast - last_ema_slow) / last_close
-    momentum_strength = abs(last_hist) / last_close
+    distance = abs(last_close - last_sar) / last_close
     # fator de escala empírico para variações típicas de preço nos pares OTC
-    score = min(1.0, (trend_strength + momentum_strength) * 300)
+    score = min(1.0, distance * 400)
 
-    # RSI aqui não exige "neutralidade": numa tendência saudável ele fica
-    # deslocado para o lado da tendência (>50 em alta, <50 em baixa). Ele só
-    # bloqueia a entrada quando a tendência já está exaurida (RSI extremo no
-    # mesmo sentido), reduzindo o risco de comprar/vender no topo/fundo.
-    if last_ema_fast > last_ema_slow and last_hist > 0:
+    if last_trend:  # PSAR reverteu para baixo do preço: tendência de alta
         if last_rsi >= cfg.rsi_upper:
             return None  # alta possivelmente esgotada (sobrecompra)
-        return Signal("call", score, "EMA rápida > EMA lenta, MACD positivo, sem sobrecompra")
-    if last_ema_fast < last_ema_slow and last_hist < 0:
-        if last_rsi <= cfg.rsi_lower:
-            return None  # baixa possivelmente esgotada (sobrevenda)
-        return Signal("put", score, "EMA rápida < EMA lenta, MACD negativo, sem sobrevenda")
-    return None
+        return Signal("call", score, "PSAR reverteu para alta, sem sobrecompra")
+
+    if last_rsi <= cfg.rsi_lower:
+        return None  # baixa possivelmente esgotada (sobrevenda)
+    return Signal("put", score, "PSAR reverteu para baixa, sem sobrevenda")

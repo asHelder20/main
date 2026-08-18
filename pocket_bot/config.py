@@ -55,14 +55,11 @@ class Config:
     stake_amount: float
     decision_interval_seconds: int
     min_signal_score: float
-    ema_fast_period: int
-    ema_slow_period: int
+    psar_af_step: float
+    psar_af_max: float
     rsi_period: int
     rsi_lower: float
     rsi_upper: float
-    macd_fast: int
-    macd_slow: int
-    macd_signal: int
     bb_period: int
     bb_std_mult: float
     min_bb_width: float
@@ -92,14 +89,11 @@ class Config:
             stake_amount=_env_float("STAKE_AMOUNT", 1.0),
             decision_interval_seconds=_env_int("DECISION_INTERVAL_SECONDS", 15),
             min_signal_score=_env_float("MIN_SIGNAL_SCORE", 0.35),
-            ema_fast_period=_env_int("EMA_FAST_PERIOD", 9),
-            ema_slow_period=_env_int("EMA_SLOW_PERIOD", 21),
+            psar_af_step=_env_float("PSAR_AF_STEP", 0.02),
+            psar_af_max=_env_float("PSAR_AF_MAX", 0.2),
             rsi_period=_env_int("RSI_PERIOD", 14),
             rsi_lower=_env_float("RSI_LOWER", 30),
             rsi_upper=_env_float("RSI_UPPER", 70),
-            macd_fast=_env_int("MACD_FAST", 12),
-            macd_slow=_env_int("MACD_SLOW", 26),
-            macd_signal=_env_int("MACD_SIGNAL", 9),
             bb_period=_env_int("BB_PERIOD", 20),
             bb_std_mult=_env_float("BB_STD_MULT", 2.0),
             min_bb_width=_env_float("MIN_BB_WIDTH", 0.0006),
