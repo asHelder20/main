@@ -122,49 +122,42 @@ O bot roda em loop até você interrompê-lo com `Ctrl+C` (encerramento
 gracioso: para os feeds de dados antes de sair). Todas as entradas e
 resultados ficam registrados em `trade_journal.csv`.
 
-## Deploy numa VPS (systemd)
+## Deploy numa VPS
 
-Para deixar o bot rodando 24/7, o jeito mais simples numa VPS Linux
-(Ubuntu/Debian) é como serviço systemd, com reinício automático se cair.
+### Automático (recomendado)
 
-**1. Crie um usuário dedicado** (evite rodar como root):
-```bash
-sudo useradd --system --create-home --shell /usr/sbin/nologin pocketbot
-```
+`install.sh` faz tudo: instala dependências do sistema, cria um usuário
+dedicado (`pocketbot`, sem login), copia o projeto para `/opt/pocket-bot`,
+monta o venv, pergunta o SSID e os parâmetros básicos (SSID fica oculto ao
+digitar), gera o `.env` com permissão `600` e instala + inicia o serviço
+systemd. É idempotente: rodar de novo atualiza o código e reinicia o
+serviço sem tocar no `.env`/`trade_journal.csv` já existentes.
 
-**2. Copie o projeto para a VPS** (do seu computador, via `scp`/`rsync` -
-nunca cole o `.env`/SSID direto num terminal compartilhado ou em chat):
+**1. Transfira o projeto para a VPS** (do seu computador — nunca cole o
+`.env`/SSID direto num terminal compartilhado ou em chat):
 ```bash
 rsync -avz --exclude venv --exclude .git ./ usuario@sua-vps:/tmp/pocket-bot/
 ```
 
-**3. Na VPS, instale e configure:**
+**2. Na VPS, rode o instalador:**
 ```bash
-sudo mv /tmp/pocket-bot /opt/pocket-bot
-cd /opt/pocket-bot
-sudo python3 -m venv venv
-sudo ./venv/bin/pip install -r requirements.txt
-
-# se o .env ainda não foi copiado, crie a partir do exemplo e edite
-sudo cp .env.example .env
-sudo nano .env      # preencha PO_SSID e os demais parâmetros
-
-sudo chown -R pocketbot:pocketbot /opt/pocket-bot
-sudo chmod 600 /opt/pocket-bot/.env
+ssh usuario@sua-vps
+cd /tmp/pocket-bot
+sudo bash install.sh
 ```
+Ele vai perguntar o SSID, se é conta demo, o valor por entrada e a perda
+máxima diária — o resto dos parâmetros fica com os valores padrão do
+`.env.example` (edite `/opt/pocket-bot/.env` depois se quiser ajustar mais
+coisa, e rode `sudo systemctl restart pocket-bot` para aplicar).
 
-**4. Instale o serviço:**
-```bash
-sudo cp deploy/pocket-bot.service /etc/systemd/system/pocket-bot.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now pocket-bot
-```
-
-**5. Acompanhe:**
+**3. Acompanhe:**
 ```bash
 sudo systemctl status pocket-bot
 sudo journalctl -u pocket-bot -f      # logs em tempo real
 ```
+
+**Atualizar depois:** repita o passo 1 (rsync) e rode `sudo bash
+install.sh` de novo.
 
 **Comandos úteis:**
 ```bash
@@ -172,21 +165,37 @@ sudo systemctl restart pocket-bot     # após editar o .env ou atualizar o códi
 sudo systemctl stop pocket-bot
 ```
 
-**Atualizar o código depois:** repita o passo 2 (rsync), depois
-`sudo systemctl restart pocket-bot`.
-
 **Segurança na VPS:**
-- `.env` só deve ser legível pelo usuário `pocketbot` (`chmod 600`, já
-  incluído acima) — ele contém o SSID, que dá acesso total à conta.
+- `.env` só é legível pelo usuário `pocketbot` (o instalador já aplica
+  `chmod 600`) — ele contém o SSID, que dá acesso total à conta.
 - Configure um firewall (`ufw`) permitindo só a porta SSH; o bot só faz
   conexões de saída, não precisa de porta aberta.
 - Mantenha a VPS atualizada (`apt update && apt upgrade`) e o acesso SSH
   restrito a chave pública (desative login por senha).
 
+### Manual (se preferir controlar cada passo)
+
+```bash
+sudo useradd --system --create-home --shell /usr/sbin/nologin pocketbot
+sudo mkdir -p /opt/pocket-bot
+sudo rsync -a --exclude venv --exclude .git ./ /opt/pocket-bot/
+cd /opt/pocket-bot
+sudo python3 -m venv venv
+sudo ./venv/bin/pip install -r requirements.txt
+sudo cp .env.example .env
+sudo nano .env      # preencha PO_SSID e os demais parâmetros
+sudo chown -R pocketbot:pocketbot /opt/pocket-bot
+sudo chmod 600 .env
+sudo cp deploy/pocket-bot.service /etc/systemd/system/pocket-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now pocket-bot
+```
+
 ## Estrutura do projeto
 
 ```
 main.py                    ponto de entrada
+install.sh                 instalador automático para VPS
 pocket_bot/
   config.py                carrega e valida o .env
   indicators.py             Parabolic SAR, RSI, Bandas de Bollinger
