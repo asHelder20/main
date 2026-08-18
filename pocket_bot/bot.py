@@ -36,6 +36,18 @@ class TradingBot:
 
         async with PocketOptionAsync(self.cfg.ssid) as client:
             actual_demo = client.is_demo()
+            # PO_DEMO no .env é só uma declaração do usuário; a trava que
+            # realmente importa usa o tipo de conta que o SSID de fato abriu
+            # na corretora (is_demo()), para não confiar numa flag que pode
+            # estar errada ou desatualizada em relação ao SSID colado.
+            if not actual_demo and not self.cfg.live_trading_confirmed:
+                await client.shutdown()
+                raise SystemExit(
+                    "O SSID conectou numa conta REAL, mas LIVE_TRADING_CONFIRMED "
+                    "não está true no .env. Encerrando antes de qualquer operação. "
+                    "Se isso não era esperado, confira se colou o SSID da sessão "
+                    "demo, não da real."
+                )
             pair_expiry = await self._resolve_pairs(client)
             if not pair_expiry:
                 raise SystemExit(
