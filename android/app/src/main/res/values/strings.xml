@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Pocket Option Bot</string>
+    <string name="label_ssid">SSID</string>
+    <string name="label_pairs">Pares (separados por vírgula)</string>
+    <string name="label_stake">Valor por entrada (USD)</string>
+    <string name="label_max_loss">Perda máxima diária (USD)</string>
+    <string name="label_expiry">Expiração desejada (segundos)</string>
+    <string name="action_start">Iniciar</string>
+    <string name="action_stop">Parar</string>
+    <string name="status_stopped">Parado</string>
+    <string name="notification_channel_name">Pocket Option Bot</string>
+</resources>

@@ -5,6 +5,10 @@ analisa vários pares em tempo real, escolhe automaticamente o de melhor
 sinal a cada ciclo e executa a operação (CALL/PUT) sozinho, com limites de
 risco configuráveis.
 
+Este README cobre a versão Python (para correr num PC/VPS). Também existe
+uma **app Android nativa** com o mesmo algoritmo, em [`android/`](android/README.md)
+— com avisos importantes sobre o que foi testado e o que não foi.
+
 ## ⚠️ Leia antes de usar
 
 - **A Pocket Option não tem API oficial.** Este bot usa a biblioteca
