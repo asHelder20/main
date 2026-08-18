@@ -36,44 +36,85 @@ class TradingBot:
 
         async with PocketOptionAsync(self.cfg.ssid) as client:
             actual_demo = client.is_demo()
+            pair_expiry = await self._resolve_pairs(client)
+            if not pair_expiry:
+                raise SystemExit(
+                    "Nenhum dos pares configurados em PO_PAIRS está ativo ou tem "
+                    "uma duração de expiração compatível na corretora. Revise "
+                    "PO_PAIRS/EXPIRY_SECONDS no .env."
+                )
             logger.warning(
                 "Conectado à Pocket Option | conta=%s | pares monitorados=%s",
                 "DEMO" if actual_demo else "REAL",
-                ", ".join(self.cfg.pairs),
+                ", ".join(f"{pair}({expiry}s)" for pair, expiry in pair_expiry.items()),
             )
             if not actual_demo:
                 logger.warning(
-                    "OPERANDO COM DINHEIRO REAL. stake=%.2f expiracao=%ss "
+                    "OPERANDO COM DINHEIRO REAL. stake=%.2f "
                     "perda_max_diaria=%.2f max_operacoes_dia=%s",
                     self.cfg.stake_amount,
-                    self.cfg.expiry_seconds,
                     self.cfg.max_daily_loss,
                     self.cfg.max_trades_per_day,
                 )
 
-            feed = MarketFeed(client, self.cfg.pairs, self.cfg.candle_period_seconds, self.cfg.history_size)
+            feed = MarketFeed(client, list(pair_expiry), self.cfg.candle_period_seconds, self.cfg.history_size)
             await feed.start()
             try:
-                await self._decision_loop(client, feed, min_history)
+                await self._decision_loop(client, feed, min_history, pair_expiry)
             finally:
                 await feed.stop()
 
-    async def _decision_loop(self, client, feed, min_history):
+    async def _resolve_pairs(self, client):
+        """Consulta a corretora pelas durações de expiração realmente aceitas
+        por cada ativo (campo `allowed_candles`) e ajusta EXPIRY_SECONDS por
+        par quando o valor configurado não for uma opção válida (ex.: pedir
+        60s num ativo que só aceita 5s/15s/30s/180s/300s)."""
+        assets = await client.active_assets()
+        by_symbol = {a["symbol"]: a for a in assets}
+
+        resolved = {}
+        for pair in self.cfg.pairs:
+            asset = by_symbol.get(pair)
+            if asset is None:
+                logger.warning("Par %s não encontrado na lista de ativos da corretora; ignorando", pair)
+                continue
+            if not asset.get("is_active", True):
+                logger.warning("Par %s está inativo no momento; ignorando", pair)
+                continue
+            allowed = asset.get("allowed_candles") or []
+            if not allowed:
+                logger.warning("Par %s sem durações de expiração informadas; ignorando", pair)
+                continue
+            if self.cfg.expiry_seconds in allowed:
+                resolved[pair] = self.cfg.expiry_seconds
+                continue
+            closest = min(allowed, key=lambda s: abs(s - self.cfg.expiry_seconds))
+            logger.warning(
+                "Par %s não aceita expiração de %ss; usando %ss (opções válidas: %s)",
+                pair,
+                self.cfg.expiry_seconds,
+                closest,
+                sorted(allowed),
+            )
+            resolved[pair] = closest
+        return resolved
+
+    async def _decision_loop(self, client, feed, min_history, pair_expiry):
         while not self._stopping:
             await asyncio.sleep(self.cfg.decision_interval_seconds)
             try:
-                await self._tick(client, feed, min_history)
+                await self._tick(client, feed, min_history, pair_expiry)
             except Exception:
                 logger.exception("Erro no ciclo de decisão; continuando no próximo ciclo")
 
-    async def _tick(self, client, feed, min_history):
+    async def _tick(self, client, feed, min_history, pair_expiry):
         can_trade, reason = self.risk.can_trade()
         if not can_trade:
             logger.info("Sem novas operações: %s", reason)
             return
 
         best = None
-        for pair in self.cfg.pairs:
+        for pair in pair_expiry:
             df = feed.get_dataframe(pair)
             if df is None or len(df) < min_history:
                 continue
@@ -88,22 +129,23 @@ class TradingBot:
             logger.debug("Nenhum sinal com score suficiente neste ciclo")
             return
 
-        await self._execute(client, best)
+        await self._execute(client, best, pair_expiry[best.pair])
 
-    async def _execute(self, client, signal):
+    async def _execute(self, client, signal, expiry_seconds):
         logger.info(
-            "Sinal escolhido: %s %s | score=%.2f | %s",
+            "Sinal escolhido: %s %s | score=%.2f | expiracao=%ss | %s",
             signal.pair,
             signal.action.upper(),
             signal.score,
+            expiry_seconds,
             signal.reason,
         )
         self.risk.register_open()
         try:
             if signal.action == "call":
-                trade_id, _deal = await client.buy(signal.pair, self.cfg.stake_amount, self.cfg.expiry_seconds)
+                trade_id, _deal = await client.buy(signal.pair, self.cfg.stake_amount, expiry_seconds)
             else:
-                trade_id, _deal = await client.sell(signal.pair, self.cfg.stake_amount, self.cfg.expiry_seconds)
+                trade_id, _deal = await client.sell(signal.pair, self.cfg.stake_amount, expiry_seconds)
         except Exception:
             logger.exception("Falha ao enviar ordem para %s", signal.pair)
             self.risk.register_result(0.0)
@@ -113,16 +155,16 @@ class TradingBot:
             pair=signal.pair,
             action=signal.action,
             amount=self.cfg.stake_amount,
-            expiry_seconds=self.cfg.expiry_seconds,
+            expiry_seconds=expiry_seconds,
             trade_id=trade_id,
             score=f"{signal.score:.3f}",
             reason=signal.reason,
         )
-        asyncio.create_task(self._await_result(client, trade_id, signal))
+        asyncio.create_task(self._await_result(client, trade_id, signal, expiry_seconds))
 
-    async def _await_result(self, client, trade_id, signal):
+    async def _await_result(self, client, trade_id, signal, expiry_seconds):
         try:
-            result = await client.check_win(trade_id, timeout_seconds=self.cfg.expiry_seconds + 30)
+            result = await client.check_win(trade_id, timeout_seconds=expiry_seconds + 30)
         except Exception:
             logger.exception("Não foi possível confirmar o resultado da operação %s", trade_id)
             self.risk.register_result(0.0)

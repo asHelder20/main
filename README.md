@@ -46,7 +46,14 @@ risco configuráveis.
    par com maior score entre todos os monitorados e só opera se o score
    ultrapassar `MIN_SIGNAL_SCORE`. É assim que o bot "escolhe os pares"
    automaticamente.
-4. **Execução**: compra CALL/PUT via `client.buy`/`client.sell`, registra a
+4. **Expirações por ativo**: a Pocket Option só aceita durações fixas por
+   ativo (ex.: 5s/15s/30s/60s/180s/300s — o que você vê na plataforma como
+   "M1", "M3", "M5"...). Ao conectar, o bot consulta `active_assets()` e
+   descobre a lista real (`allowed_candles`) de cada par configurado; se
+   `EXPIRY_SECONDS` não for uma opção válida para aquele par, ele usa a
+   duração permitida mais próxima automaticamente (e avisa no log). Pares
+   inativos no momento ou não encontrados na corretora são ignorados.
+5. **Execução**: compra CALL/PUT via `client.buy`/`client.sell`, registra a
    operação em `trade_journal.csv` e depois confirma o resultado via
    `check_win`, atualizando o PnL do dia.
 5. **Gestão de risco** (`pocket_bot/risk.py`): antes de cada entrada,
