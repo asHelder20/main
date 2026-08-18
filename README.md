@@ -122,6 +122,67 @@ O bot roda em loop até você interrompê-lo com `Ctrl+C` (encerramento
 gracioso: para os feeds de dados antes de sair). Todas as entradas e
 resultados ficam registrados em `trade_journal.csv`.
 
+## Deploy numa VPS (systemd)
+
+Para deixar o bot rodando 24/7, o jeito mais simples numa VPS Linux
+(Ubuntu/Debian) é como serviço systemd, com reinício automático se cair.
+
+**1. Crie um usuário dedicado** (evite rodar como root):
+```bash
+sudo useradd --system --create-home --shell /usr/sbin/nologin pocketbot
+```
+
+**2. Copie o projeto para a VPS** (do seu computador, via `scp`/`rsync` -
+nunca cole o `.env`/SSID direto num terminal compartilhado ou em chat):
+```bash
+rsync -avz --exclude venv --exclude .git ./ usuario@sua-vps:/tmp/pocket-bot/
+```
+
+**3. Na VPS, instale e configure:**
+```bash
+sudo mv /tmp/pocket-bot /opt/pocket-bot
+cd /opt/pocket-bot
+sudo python3 -m venv venv
+sudo ./venv/bin/pip install -r requirements.txt
+
+# se o .env ainda não foi copiado, crie a partir do exemplo e edite
+sudo cp .env.example .env
+sudo nano .env      # preencha PO_SSID e os demais parâmetros
+
+sudo chown -R pocketbot:pocketbot /opt/pocket-bot
+sudo chmod 600 /opt/pocket-bot/.env
+```
+
+**4. Instale o serviço:**
+```bash
+sudo cp deploy/pocket-bot.service /etc/systemd/system/pocket-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now pocket-bot
+```
+
+**5. Acompanhe:**
+```bash
+sudo systemctl status pocket-bot
+sudo journalctl -u pocket-bot -f      # logs em tempo real
+```
+
+**Comandos úteis:**
+```bash
+sudo systemctl restart pocket-bot     # após editar o .env ou atualizar o código
+sudo systemctl stop pocket-bot
+```
+
+**Atualizar o código depois:** repita o passo 2 (rsync), depois
+`sudo systemctl restart pocket-bot`.
+
+**Segurança na VPS:**
+- `.env` só deve ser legível pelo usuário `pocketbot` (`chmod 600`, já
+  incluído acima) — ele contém o SSID, que dá acesso total à conta.
+- Configure um firewall (`ufw`) permitindo só a porta SSH; o bot só faz
+  conexões de saída, não precisa de porta aberta.
+- Mantenha a VPS atualizada (`apt update && apt upgrade`) e o acesso SSH
+  restrito a chave pública (desative login por senha).
+
 ## Estrutura do projeto
 
 ```
@@ -134,6 +195,8 @@ pocket_bot/
   risk.py                   limites de risco
   journal.py                registro CSV de operações
   bot.py                    orquestrador (conecta, decide, executa)
+deploy/
+  pocket-bot.service         unit systemd para rodar 24/7 numa VPS
 ```
 
 ## Troubleshooting

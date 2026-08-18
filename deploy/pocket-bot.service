@@ -1,0 +1,27 @@
+[Unit]
+Description=Pocket Option Trading Bot
+After=network-online.target
+Wants=network-online.target
+# evita loop de reinício infinito e agressivo se o bot ficar crashando
+# (ex.: SSID expirado) - desiste após 5 tentativas em 5 minutos
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pocketbot
+Group=pocketbot
+WorkingDirectory=/opt/pocket-bot
+ExecStart=/opt/pocket-bot/venv/bin/python /opt/pocket-bot/main.py
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+
+# hardening básico - o processo não precisa de mais que isto
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/pocket-bot
+
+[Install]
+WantedBy=multi-user.target
