@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "metatrader5": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/Qoyyuum/mcp-metatrader5-server",
+        "mt5mcp"
+      ],
+      "env": {
+        "MT5_MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}

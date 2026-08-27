@@ -195,6 +195,24 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now pocket-bot
 ```
 
+## MetaTrader 5 via MCP (separado do bot)
+
+Além do bot da Pocket Option, o repositório traz a configuração para ligar
+um cliente MCP (Claude Code, Claude Desktop, Cursor...) ao **MetaTrader 5** —
+ver [`.mcp.json`](.mcp.json) e o guia em
+[`docs/mcp-metatrader5.md`](docs/mcp-metatrader5.md).
+
+**Só funciona no Windows**: o servidor MCP depende do pacote `metatrader5`,
+que tem wheels apenas para `win_amd64` e fala com o terminal MT5 por IPC
+local. Para verificar a ligação, com o terminal MT5 aberto:
+
+```powershell
+uv run --with fastmcp --with python-dotenv scripts/check_mt5_mcp.py
+```
+
+Isto é uma via independente do bot: o `pocket_bot/` continua a operar só na
+Pocket Option, por WebSocket.
+
 ## Estrutura do projeto
 
 ```
@@ -210,6 +228,11 @@ pocket_bot/
   bot.py                    orquestrador (conecta, decide, executa)
 deploy/
   pocket-bot.service         unit systemd para rodar 24/7 numa VPS
+.mcp.json                  servidor MCP do MetaTrader 5 (Windows)
+scripts/
+  check_mt5_mcp.py           verifica a ligação MT5 via MCP
+docs/
+  mcp-metatrader5.md         guia da conexão MetaTrader 5 via MCP
 ```
 
 ## Troubleshooting
