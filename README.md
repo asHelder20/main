@@ -204,10 +204,12 @@ ver [`.mcp.json`](.mcp.json) e o guia em
 
 **Só funciona no Windows**: o servidor MCP depende do pacote `metatrader5`,
 que tem wheels apenas para `win_amd64` e fala com o terminal MT5 por IPC
-local. Para verificar a ligação, com o terminal MT5 aberto:
+local. Para verificar a ligação, com o terminal MT5 aberto e autenticado
+(sem precisar de credenciais nem de clonar o repositório):
 
 ```powershell
-uv run --with fastmcp --with python-dotenv scripts/check_mt5_mcp.py
+uv run --with fastmcp --with python-dotenv `
+  "https://raw.githubusercontent.com/asHelder20/main/claude/metatrader5-mcp-connection-77owda/scripts/check_mt5_mcp.py"
 ```
 
 Isto é uma via independente do bot: o `pocket_bot/` continua a operar só na

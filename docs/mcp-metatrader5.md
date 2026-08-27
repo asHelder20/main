@@ -96,22 +96,34 @@ A ordem importa — `initialize` tem de vir primeiro:
 ## Verificar a ligação
 
 O script [`scripts/check_mt5_mcp.py`](../scripts/check_mt5_mcp.py) executa
-essa sequência de fora do cliente MCP e imprime os dados da conta. A partir
-da raiz do repositório, no Windows, com o terminal MT5 aberto:
+essa sequência de fora do cliente MCP e imprime os dados da conta.
+
+Se o terminal MT5 já está aberto e autenticado na conta que quer usar, **não
+precisa de credencial nenhuma** — o script salta o `login()` e usa a conta que
+o terminal já tem. No Windows, sem sequer clonar o repositório:
+
+```powershell
+uv run --with fastmcp --with python-dotenv `
+  "https://raw.githubusercontent.com/asHelder20/main/claude/metatrader5-mcp-connection-77owda/scripts/check_mt5_mcp.py"
+```
+
+Ou, a partir da raiz do repositório clonado:
 
 ```powershell
 uv run --with fastmcp --with python-dotenv scripts/check_mt5_mcp.py
 ```
 
-Ele lê as credenciais do ambiente ou de um ficheiro `.env` (que o `.gitignore`
-já exclui):
+Só precisa de credenciais para **trocar de conta**. Nesse caso são precisas as
+três, do ambiente ou de um ficheiro `.env` (que o `.gitignore` já exclui):
 
 ```env
-MT5_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
 MT5_LOGIN=12345678
 MT5_PASSWORD="a_sua_senha"
 MT5_SERVER="SuaCorretora-Demo"
 ```
+
+`MT5_PATH` é opcional em qualquer dos casos — sem ela usa-se
+`C:\Program Files\MetaTrader 5\terminal64.exe`.
 
 Saída esperada:
 
@@ -121,8 +133,7 @@ Servidor MCP ligado. 26 ferramentas disponíveis.
 initialize(path='C:\\Program Files\\MetaTrader 5\\terminal64.exe')
   OK
 
-login(login=12345678, server='SuaCorretora-Demo')
-  OK
+login() ignorado - a usar a conta em que o terminal MT5 já está ligado.
 
 get_account_info()
   conta:     12345678

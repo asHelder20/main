@@ -1,27 +1,30 @@
 """Verifica de ponta a ponta a conexão com o MetaTrader 5 via MCP.
 
 Sobe o servidor `mt5mcp` em stdio (o mesmo comando do `.mcp.json`), chama
-`initialize` -> `login` -> `get_account_info` e imprime o resultado. Serve
+`initialize` -> (`login`) -> `get_account_info` e imprime o resultado. Serve
 para confirmar que a ligação funciona antes de a usar dentro do Claude Code.
 
 SÓ FUNCIONA NO WINDOWS: o pacote `metatrader5` do PyPI publica wheels apenas
 para `win_amd64`, e o terminal MetaTrader 5 tem de estar instalado e aberto.
 
-Uso (a partir da raiz do repositório, com o terminal MT5 aberto):
+Uso mais simples — se o terminal MT5 já está aberto e autenticado na conta
+que quer usar, não precisa de credencial nenhuma:
 
     uv run --with fastmcp --with python-dotenv scripts/check_mt5_mcp.py
 
-As credenciais são lidas do ambiente ou de um ficheiro `.env` (que o
-`.gitignore` já exclui):
+O script usa a conta em que o terminal já está ligado. Só precisa de definir
+credenciais se quiser que ele troque de conta; nesse caso são precisas as
+três, lidas do ambiente ou de um ficheiro `.env` (que o `.gitignore` exclui):
 
-    MT5_PATH="C:\\Program Files\\MetaTrader 5\\terminal64.exe"
     MT5_LOGIN=12345678
     MT5_PASSWORD="a_sua_senha"
     MT5_SERVER="SuaCorretora-Demo"
 
-MT5_LOGIN/MT5_PASSWORD/MT5_SERVER são usados por ESTE script, não pelo
-servidor MCP — o servidor recebe-os como argumentos das ferramentas
-`initialize` e `login`.
+`MT5_PATH` é sempre opcional; sem ela usa-se o caminho de instalação normal.
+
+Estas variáveis são usadas por ESTE script, não pelo servidor MCP — o
+servidor recebe os valores como argumentos das ferramentas `initialize` e
+`login`, e ignora-as no ambiente.
 """
 
 import asyncio
@@ -49,25 +52,41 @@ def _field(info: object, name: str) -> object:
     return getattr(info, name, "?")
 
 
-def _require(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        sys.exit(f"Falta a variável {name} (defina-a no ambiente ou num ficheiro .env).")
-    return value
+def _resolve_credentials() -> tuple[int, str, str] | None:
+    """Lê as credenciais opcionais de login.
+
+    Devolve None quando nenhuma foi definida — nesse caso usa-se a conta em
+    que o terminal MT5 já está autenticado. Exigir as três em conjunto evita
+    o caso silencioso de um login a meio configurar.
+    """
+    names = ("MT5_LOGIN", "MT5_PASSWORD", "MT5_SERVER")
+    values = {name: os.getenv(name) for name in names}
+    provided = [name for name, value in values.items() if value]
+
+    if not provided:
+        return None
+    if len(provided) < len(names):
+        faltam = ", ".join(name for name in names if not values[name])
+        sys.exit(
+            f"Login incompleto: falta {faltam}. Defina as três variáveis "
+            f"({', '.join(names)}) para trocar de conta, ou nenhuma para usar "
+            "a conta em que o terminal MT5 já está ligado."
+        )
+
+    login_raw = values["MT5_LOGIN"]
+    try:
+        login = int(login_raw)
+    except ValueError:
+        sys.exit(f"MT5_LOGIN tem de ser o número da conta, recebi: {login_raw!r}")
+
+    return login, values["MT5_PASSWORD"], values["MT5_SERVER"]
 
 
 async def main() -> int:
     load_dotenv()
 
     mt5_path = os.getenv("MT5_PATH") or DEFAULT_MT5_PATH
-    login_raw = _require("MT5_LOGIN")
-    password = _require("MT5_PASSWORD")
-    server = _require("MT5_SERVER")
-
-    try:
-        login = int(login_raw)
-    except ValueError:
-        sys.exit(f"MT5_LOGIN tem de ser o número da conta, recebi: {login_raw!r}")
+    credentials = _resolve_credentials()
 
     transport = StdioTransport(
         command=SERVER_COMMAND,
@@ -76,8 +95,9 @@ async def main() -> int:
     )
 
     try:
-        return await _run_checks(client=Client(transport), mt5_path=mt5_path,
-                                 login=login, password=password, server=server)
+        return await _run_checks(
+            client=Client(transport), mt5_path=mt5_path, credentials=credentials
+        )
     except Exception as exc:  # noqa: BLE001 - queremos um diagnóstico legível
         print(f"Não foi possível falar com o servidor MCP: {exc}")
         print()
@@ -87,7 +107,9 @@ async def main() -> int:
         return 1
 
 
-async def _run_checks(client: Client, mt5_path: str, login: int, password: str, server: str) -> int:
+async def _run_checks(
+    client: Client, mt5_path: str, credentials: tuple[int, str, str] | None
+) -> int:
     async with client:
         tools = await client.list_tools()
         print(f"Servidor MCP ligado. {len(tools)} ferramentas disponíveis.")
@@ -102,15 +124,22 @@ async def _run_checks(client: Client, mt5_path: str, login: int, password: str, 
             return 1
         print("  OK")
 
-        print(f"\nlogin(login={login}, server={server!r})")
-        result = await client.call_tool(
-            "login", {"login": login, "password": password, "server": server}
-        )
-        if not result.data:
-            print("FALHOU. Confirme número de conta, senha e nome exato do servidor da corretora.")
-            await client.call_tool("shutdown", {})
-            return 1
-        print("  OK")
+        if credentials is None:
+            print("\nlogin() ignorado - a usar a conta em que o terminal MT5 já está ligado.")
+        else:
+            login, password, server = credentials
+            print(f"\nlogin(login={login}, server={server!r})")
+            result = await client.call_tool(
+                "login", {"login": login, "password": password, "server": server}
+            )
+            if not result.data:
+                print(
+                    "FALHOU. Confirme número de conta, senha e nome exato do "
+                    "servidor da corretora."
+                )
+                await client.call_tool("shutdown", {})
+                return 1
+            print("  OK")
 
         print("\nget_account_info()")
         info = (await client.call_tool("get_account_info", {})).data
